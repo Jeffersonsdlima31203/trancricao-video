@@ -1,50 +1,51 @@
-import moviepy as mp
+import moviepy.editor as mp  # Corrigido para importar o módulo correto do moviepy
 import speech_recognition as sr
+from pydub import AudioSegment
+from pydub.utils import make_chunks
+import sys
 
-# Função para extrair áudio do vídeo
-def extract_audio_from_video(video_file):
-    video = mp.VideoFileClip(video_file)
-    audio = video.audio
-    audio_file = "extracted_audio.wav"
-    audio.write_audiofile(audio_file)
-    return audio_file
+# Defina o caminho do vídeo
+path = "./onyx_ete.mp4"
 
-# Função para transcrever áudio
-def transcribe_audio(audio_file):
-    recognizer = sr.Recognizer()
-    audio_file_path = audio_file
+# Carregue o vídeo e extraia o áudio
+clip = mp.VideoFileClip(path)  # Carregue o vídeo completo
+clip.audio.write_audiofile("./audio.mp3")  # Gere o arquivo de áudio MP3
 
-    with sr.AudioFile(audio_file_path) as source:
-        print("Ajustando para o ruído ambiente... por favor, espere.")
-        recognizer.adjust_for_ambient_noise(source, duration=2)  # Ajuste mais longo para melhorar a calibração do ruído
-        print("Capturando áudio...")
+# Carregar o áudio
+audio = AudioSegment.from_file("./audio.mp3", "mp3")  # Caminho correto para o arquivo de áudio
 
-        # Captura o áudio
-        audio = recognizer.record(source)
+# Tamanho do corte em milissegundos (exemplo: 3 minutos)
+size = 180000  # 180000 ms = 3 minutos
 
+# Divida o áudio em pedaços
+chunks = make_chunks(audio, size)
+
+# Itere pelos pedaços do áudio
+for i, chunk in enumerate(chunks):
+    # Nome do arquivo de saída
+    chunk_name = f"audio{i}.wav"  # Nome do arquivo para o pedaço de áudio
+    
+    # Exporte o pedaço para WAV
+    chunk.export(chunk_name, format="wav")
+    
+    # Abrir o arquivo de áudio para reconhecimento
+    file_audio = sr.AudioFile(chunk_name)
+    
+    # Crie o reconhecedor de fala
+    r = sr.Recognizer()
+    
     try:
-        print("Reconhecendo o que foi dito...")
-        # Converte o áudio para texto usando o Google Web Speech API
-        text = recognizer.recognize_google(audio, language="pt-BR")
-        print(f"Texto transcrito: {text}")
-        return text
+        with file_audio as source:
+            audio_text = r.record(source)  # Capture o áudio do arquivo
+            text = r.recognize_google(audio_text, language='pt-BR')  # Converta para texto (Português)
+        
+        # Salve o texto reconhecido em um arquivo .txt
+        with open(chunk_name.replace('.wav', '.txt'), 'w', encoding='utf-8') as arq:  # Abertura com encoding
+            arq.write(text)
+        
+        print(f"Texto do {chunk_name}: {text}")  # Exiba o texto no terminal
+
     except sr.UnknownValueError:
-        print("Não consegui entender o áudio. Por favor, fale mais claramente.")
-        return None
-    # except sr.RequestError as e:
-    #     print(f"Ocorreu um erro na requisição ao serviço de reconhecimento de fala: {e}")
-    #     return None
-    except Exception as e:
-        print(f"Erro inesperado durante o reconhecimento de fala: {e}")
-        return None
-
-# Função principal para transcrição de vídeo
-def transcribe_video(video_file):
-    print("Extraindo áudio do vídeo...")
-    audio_file = extract_audio_from_video(video_file)
-    print(f"Áudio extraído e salvo como {audio_file}. Iniciando transcrição...")
-    transcribe_audio(audio_file)
-
-# Exemplo de uso
-video_file = "ete_piracaia.mp4"  # Substitua pelo caminho do seu arquivo de vídeo
-transcribe_video(video_file)
+        print(f"Não foi possível reconhecer o áudio no arquivo {chunk_name}")
+    except sr.RequestError as e:
+        print(f"Erro de requisição ao serviço de reconhecimento de fala: {e}")
